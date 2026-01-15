@@ -1,58 +1,61 @@
-import sys, os, subprocess, yaml
-import pandas as pd
+import logging
+import os
+import shutil
+import glob
+import subprocess
+import sys
 from pathlib import Path
+
+import pandas as pd
+import yaml
 import rdkit
 from rdkit import Chem
-from IPython.core.debugger import Pdb
 
-# from extend_driver import setup_custom_logger
 from ChemTSv2.chemts_mothods import Methods, logs_dir
-# from ChemTSv2.chemts_mothods import *
-import logging
 
-cwd = os.path.dirname(os.path.abspath(__file__))
+cwd = Path(__file__).resolve().parent
 # target_dirname = 'work/results'
 
 class Generate_Lead:
     def __init__(self, trajectory_dirs, config):
-        self.trajectory_dirs = trajectory_dirs
+        self.trajectory_dirs = [Path(d) for d in trajectory_dirs]
         self.rank_output_dirs = []
         self.input_compound_files = []
         self.conf = config  
         cm = Methods(self.conf)
         self.cm = cm
-        self.out_log_file = os.path.join(logs_dir, 'ChemTS.log')
-        self.generation_workflow = self.conf['GENERATE_WORKFLOW']['working_directory']
-        self.target_dirname = self.conf['ChemTS']['target_dirname']
-        self.logger = self.cm.setup_custom_logger('ChemTS', self.out_log_file)
+        self.out_log_file = Path(logs_dir) / 'ChemTS.log'
+        self.generation_workflow = Path(self.conf['GENERATE_WORKFLOW']['working_directory'])
+        self.target_dirname = Path(self.conf['ChemTS']['target_dirname'])
+        self.logger = self.cm.setup_custom_logger('ChemTS', str(self.out_log_file))
 
     def run(self):
         for trajectory_dir in self.trajectory_dirs:
-            self.logger.info(trajectory_dir)
-            sincho_result_file = os.path.join(trajectory_dir, 'sincho_result.yaml')
+            self.logger.info(str(trajectory_dir))
+            sincho_result_file = trajectory_dir / 'sincho_result.yaml'
 
-            trajectory_name = trajectory_dir.split(os.sep)[-1]
+            trajectory_name = trajectory_dir.name
             trajectory_num = trajectory_name.split('_')[-1]
 
-            ChemTS_output_dir = os.path.join(self.generation_workflow, 'ChemTS')
-            trajectory_output_dir = os.path.join(ChemTS_output_dir, trajectory_name)
-            os.makedirs(trajectory_output_dir, exist_ok = True)
+            ChemTS_output_dir = self.generation_workflow / 'ChemTS'
+            trajectory_output_dir = ChemTS_output_dir / trajectory_name
+            trajectory_output_dir.mkdir(parents=True, exist_ok = True)
             
             with open(sincho_result_file, 'r')as f:
                 sincho_results = yaml.safe_load(f)
             sincho_results = sincho_results['SINCHO_result']
             
-            input_compound_file = os.path.join(trajectory_dir, 'lig_'+ trajectory_num + '.pdb')
+            input_compound_file = trajectory_dir / f'lig_{trajectory_num}.pdb'
             self.input_compound_files.append(input_compound_file)
-            input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(input_compound_file))
+            input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))
 
             # 中性ならTrue,電荷ありならFalse
             self.is_neutral = self.cm.check_neutral(input_compound_smiles)
             
             for rank, sincho_result in sincho_results.items():
                 self.logger.info(f"rank , {rank}")
-                rank_output_dir = os.path.join(trajectory_output_dir, rank)
-                os.makedirs(rank_output_dir, exist_ok = True)
+                rank_output_dir = trajectory_output_dir / rank
+                rank_output_dir.mkdir(parents=True, exist_ok = True)
                 self.rank_output_dirs.append(rank_output_dir)
 
                 # 生やしたい分子量を取得
@@ -71,15 +74,15 @@ class Generate_Lead:
                     
                     self.logger.info('ligand has charges.')
                     # openbabelで中性化
-                    self.cm.do_neutral(input_compound_file)
+                    self.cm.do_neutral(str(input_compound_file))
                     # SMILESを中性化に更新
-                    input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(input_compound_file))
+                    input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))
 
                 # 初期SMILESの物性値を計算し、configに記載しておく
                 config_add_props = self.cm.calc_property(input_compound_smiles, self.conf)
 
                 # SMILESの並び替え(中性化→計算→並び替えの順序は保持する)
-                rearrange_smi = self.cm.set_rearrange_smiles(input_compound_file, extend_atom)
+                rearrange_smi = self.cm.set_rearrange_smiles(str(input_compound_file), extend_atom)
                 self.logger.info(f"smi , {input_compound_smiles}")
 
                 # 不正SMILESのチェック(現状は[n]のみ)
@@ -88,34 +91,59 @@ class Generate_Lead:
 
                 self.logger.info(f"rearrange_smi , {rearrange_smi}")
 
-                os.makedirs(os.path.join(cwd, 'work'), exist_ok=True)
-                subprocess.run(['rm', os.path.join('work', '_setting.yaml')], cwd=cwd)
+                (cwd / 'work').mkdir(parents=True, exist_ok=True)
+                setting_yaml_path = cwd / 'work' / '_setting.yaml'
+                if setting_yaml_path.exists():
+                    setting_yaml_path.unlink()
                 self.cm.make_config_file({**config_add_props, **sincho_result}, weight_model_dir)
 
                 # 化合物生成をn回
-                df_result_all = pd.DataFrame()
+                df_result_list = []
                 for n in range(1, int(self.conf['ChemTS']['num_chemts_loops'])+1):
                     with open(self.out_log_file, 'a') as stdout_f:
-                        subprocess.run(['python', 'run.py', '-c', os.path.join('work', '_setting.yaml'), 
-                                        '--input_smiles', rearrange_smi], cwd=cwd, stdout=stdout_f, stderr=stdout_f)
-                        subprocess.run(' '.join(['mv', os.path.join(self.target_dirname, 'result_C*'), 
-                                                       os.path.join(self.target_dirname, 'result.csv')]), 
-                                                       shell=True, cwd=cwd, stdout=stdout_f, stderr=stdout_f)
-                        df_result_one_cycle = pd.read_csv(os.path.join(cwd, self.target_dirname, 'result.csv'))
+                        try:
+                            subprocess.run(['python', 'run.py', '-c', str(Path('work') / '_setting.yaml'), 
+                                            '--input_smiles', rearrange_smi], cwd=str(cwd), stdout=stdout_f, stderr=stdout_f, check=True)
+                        except subprocess.CalledProcessError as e:
+                            self.logger.error(f"ChemTS execution failed in trial {n}: {e}")
+                            raise
+                        
+                        # mv result_C* -> result.csv
+                        pattern = 'result_C*'
+                        matched_files = list((cwd / self.target_dirname).glob(pattern))
+                        
+                        if len(matched_files) == 1:
+                            shutil.move(str(matched_files[0]), str(cwd / self.target_dirname / 'result.csv'))
+                        elif len(matched_files) > 1:
+                            raise RuntimeError(f"Multiple result files found: {matched_files}. Expected only one.")
+                        else:
+                            self.logger.warning("No result file found matching 'result_C*'")
+
+                        df_result_one_cycle = pd.read_csv(str(cwd / self.target_dirname / 'result.csv'))
                         df_result_one_cycle.insert(0, 'trial', n) 
-                        df_result_all = pd.concat([df_result_all, df_result_one_cycle])
-                        subprocess.run(' '.join(['cat', os.path.join(self.target_dirname, 'run.log'), 
-                                                 '>>', os.path.join(self.target_dirname, 'run.log.all')]), shell=True, cwd=cwd)
+                        df_result_list.append(df_result_one_cycle)
+                        
+                        run_log_path = cwd / self.target_dirname / 'run.log'
+                        run_log_all_path = cwd / self.target_dirname / 'run.log.all'
+                        if run_log_path.exists():
+                            with open(run_log_path, 'r') as f_in, open(run_log_all_path, 'a') as f_out:
+                                f_out.write(f_in.read())
+                
+                df_result_all = pd.concat(df_result_list, ignore_index=True) if df_result_list else pd.DataFrame()
                         
                 # for debug df_result_all
                 # df_result_all = pd.read_csv(os.path.join(cwd, self.target_dirname, 'results.csv'))
                 
                 # n回分を一つのファイルにし、個々のファイルは消しておく
-                output_csv_path = os.path.join(cwd, self.target_dirname, 'results.csv')
-                df_result_all.to_csv(output_csv_path)
-                subprocess.run(['rm', os.path.join(self.target_dirname, 'result.csv'),], cwd=cwd)
+                output_csv_path = cwd / self.target_dirname / 'results.csv'
+                df_result_all.to_csv(str(output_csv_path))
+                result_csv_path = cwd / self.target_dirname / 'result.csv'
+                if result_csv_path.exists():
+                    result_csv_path.unlink()
                 
                 # 今回の生成のrewardなどをプロット
-                self.cm.plot_reward(output_csv_path)
+                self.cm.plot_reward(str(output_csv_path))
 
-                subprocess.run(' '.join(['mv', os.path.join(cwd, self.target_dirname, '*'), rank_output_dir]), shell=True)
+                source_dir = cwd / self.target_dirname
+                for file_path in source_dir.glob('*'):
+                    shutil.move(str(file_path), str(rank_output_dir))
