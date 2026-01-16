@@ -1,6 +1,8 @@
 import os, subprocess, yaml
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from glob import glob
 import logging
@@ -15,23 +17,22 @@ from IPython.core.debugger import Pdb
 error_smiles = ['[n]']
 SINCHO_keys = ['SINCHO_MW', 'SINCHO_LogP']
 plot_cols = ['reward', 'Add_Substituent_MW', 'Add_Substituent_LogP']
-logs_dir = 'logs'
+
+def setup_custom_logger(name, log_file, log_level=logging.INFO):
+    logger = logging.getLogger(name)
+    if not logger.handlers:  # ハンドラが存在しない場合のみ追加する
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        handler = logging.FileHandler(log_file)
+        handler.setFormatter(formatter)
+        logger.setLevel(log_level)
+        logger.addHandler(handler)
+    return logger
 
 class Methods:
-    def __init__(self, conf=None):
+    def __init__(self, conf=None, logger = logging.getLogger(__name__)):
         self.conf = conf
-        self.logger = self.setup_custom_logger('ChemTS', os.path.join('logs', 'ChemTS.log'))
+        self.logger = logger
         self.chemts_config_path = os.path.join('ChemTSv2', 'work', '_setting.yaml')
-
-    def setup_custom_logger(self, name, log_file, log_level=logging.INFO):
-        logger = logging.getLogger(name)
-        if not logger.handlers:  # ハンドラが存在しない場合のみ追加する
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-            handler = logging.FileHandler(log_file)
-            handler.setFormatter(formatter)
-            logger.setLevel(log_level)
-            logger.addHandler(handler)
-        return logger
 
     def select_weight_model(self, smiles, estimate_mw, model_path_prefix='model/weight/'):
         peak_values = [n for n in range(0, 800, 50)]
@@ -60,6 +61,9 @@ class Methods:
         d_name = os.path.dirname(charge_pdb_path)
         f_name_ext = os.path.basename(charge_pdb_path)
         f_name, ext = os.path.splitext(f_name_ext)
+        # PDBは結合情報（BondOrder等）が欠落しており、直接中性化を行うと水素付加位置の判定ミスが多発する。
+        # そのため、結合情報を正確に扱えるMOL2形式を一時的に経由することで中性化の精度を保証しつつ、
+        # 最終的にシステム全体の互換性に合わせるためPDBへ書き戻している。
         subprocess.run(['cp', f_name_ext, f_name + '_org' + ext], cwd=d_name)
         subprocess.run(['obabel', '-ipdb', f_name_ext, '-omol2', '-O', f_name + '.mol2'], cwd=d_name)
         subprocess.run(['obabel', '-imol2', f_name + '.mol2','-opdb', '-O', f_name_ext, '--neutralize','-h'], cwd=d_name)

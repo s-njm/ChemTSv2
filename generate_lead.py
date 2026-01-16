@@ -11,23 +11,23 @@ import yaml
 import rdkit
 from rdkit import Chem
 
-from ChemTSv2.chemts_mothods import Methods, logs_dir
+from ChemTSv2.chemts_mothods import Methods, setup_custom_logger
 
 cwd = Path(__file__).resolve().parent
 # target_dirname = 'work/results'
 
 class Generate_Lead:
-    def __init__(self, trajectory_dirs, config):
+    def __init__(self, trajectory_dirs, config, log_file):
         self.trajectory_dirs = [Path(d) for d in trajectory_dirs]
         self.rank_output_dirs = []
         self.input_compound_files = []
         self.conf = config  
-        cm = Methods(self.conf)
+        self.out_log_file = log_file
+        self.logger = setup_custom_logger('ChemTS', str(self.out_log_file))
+        cm = Methods(self.conf, logger = self.logger)
         self.cm = cm
-        self.out_log_file = Path(logs_dir) / 'ChemTS.log'
         self.generation_workflow = Path(self.conf['GENERATE_WORKFLOW']['working_directory'])
         self.target_dirname = Path(self.conf['ChemTS']['target_dirname'])
-        self.logger = self.cm.setup_custom_logger('ChemTS', str(self.out_log_file))
 
     def run(self):
         for trajectory_dir in self.trajectory_dirs:
