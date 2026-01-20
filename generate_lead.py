@@ -5,6 +5,7 @@ import glob
 import subprocess
 import sys
 from pathlib import Path
+from typing import List
 
 import pandas as pd
 import yaml
@@ -17,9 +18,7 @@ cwd = Path(__file__).resolve().parent
 # target_dirname = 'work/results'
 
 class Generate_Lead:
-    def __init__(self, trajectory_dirs, config, log_file):
-        self.trajectory_dirs = [Path(d) for d in trajectory_dirs]
-        self.rank_output_dirs = []
+    def __init__(self, config, log_file):
         self.input_compound_files = []
         self.conf = config  
         self.out_log_file = log_file
@@ -29,11 +28,13 @@ class Generate_Lead:
         self.generation_workflow = Path(self.conf['GENERATE_WORKFLOW']['working_directory'])
         self.target_dirname = Path(self.conf['ChemTS']['target_dirname'])
 
-    def run(self):
-        for trajectory_dir in self.trajectory_dirs:
+    def run(self, trajectory_dirs: List[Path]) -> List[Path]:
+        rank_output_dirs = []
+        for trajectory_dir in trajectory_dirs:
             self.logger.info(str(trajectory_dir))
             sincho_result_file = trajectory_dir / 'sincho_result.yaml'
 
+            # TODO: AA_Score_Calculation.pyの_parse_trajectory_nameと同じ処理
             trajectory_name = trajectory_dir.name
             trajectory_num = trajectory_name.split('_')[-1]
 
@@ -56,7 +57,7 @@ class Generate_Lead:
                 self.logger.info(f"rank , {rank}")
                 rank_output_dir = trajectory_output_dir / rank
                 rank_output_dir.mkdir(parents=True, exist_ok = True)
-                self.rank_output_dirs.append(rank_output_dir)
+                rank_output_dirs.append(rank_output_dir)
 
                 # 生やしたい分子量を取得
                 estimate_add_mw = sincho_result['mw']
@@ -72,6 +73,7 @@ class Generate_Lead:
                     # lig_000.pdb -> lig_000_org.pdbとして保持し、中性化したものをlig_000.pdbとする
                     # pdbだと上手くいかないからmol2経由する lig_000.pdb -> lig_000.mol2 -> (neutral) -> lig_000.pdb(同名だが中性化されている)
                     
+                    # TODO: `input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))`のところで中性化すれば良いと思う。(要確認)
                     self.logger.info('ligand has charges.')
                     # openbabelで中性化
                     self.cm.do_neutral(str(input_compound_file))
@@ -147,3 +149,4 @@ class Generate_Lead:
                 source_dir = cwd / self.target_dirname
                 for file_path in source_dir.glob('*'):
                     shutil.move(str(file_path), str(rank_output_dir))
+        return rank_output_dirs
