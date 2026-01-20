@@ -81,7 +81,6 @@ class Methods:
         return properties
 
     def set_rearrange_smiles(self, pdb_path, extend_atom):
-        self.mol_dir = os.path.dirname(pdb_path)
         mol_from_pdb = Chem.MolFromPDBFile(pdb_path, sanitize=False)
         mol_from_smiles, smi = self.read_mol(mol_from_pdb)
         match = self.match_pdb_num_obabel_num(mol_from_pdb, mol_from_smiles)
@@ -144,9 +143,9 @@ class Methods:
     def check_error_smiles(self, smiles):
         return not any(error_smi in smiles for error_smi in error_smiles)
 
-    def modify_smiles(self, error_smiles):
+    def modify_smiles(self, error_smiles, mol_dir):
         error_smiles_add_at = error_smiles + '[At]'
-        at_pdb_path = os.path.join(self.mol_dir, 'add_at.pdb')
+        at_pdb_path = os.path.join(mol_dir, 'add_at.pdb')
         Chem.MolToPDBFile(Chem.MolFromSmiles(error_smiles_add_at), at_pdb_path)
         at_index = self.search_atom_index_from_pdb(at_pdb_path, 'AT')
         # print(at_index)

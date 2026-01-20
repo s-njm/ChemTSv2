@@ -92,7 +92,7 @@ class Generate_Lead:
 
                 # 不正SMILESのチェック(現状は[n]のみ)
                 if not self.cm.check_error_smiles(rearrange_smi):
-                    rearrange_smi = self.cm.modify_smiles(rearrange_smi)
+                    rearrange_smi = self.cm.modify_smiles(rearrange_smi, str(input_compound_file.parent))
 
                 self.logger.info(f"rearrange_smi , {rearrange_smi}")
 
