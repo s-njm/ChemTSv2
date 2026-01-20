@@ -13,7 +13,7 @@ import yaml
 import rdkit
 from rdkit import Chem
 
-from ChemTSv2.chemts_mothods import Methods, setup_custom_logger
+from ChemTSv2.chemts_methods import Methods, setup_custom_logger
 
 cwd = Path(__file__).resolve().parent
 # target_dirname = 'work/results'
