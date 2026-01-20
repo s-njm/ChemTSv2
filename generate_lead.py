@@ -13,7 +13,7 @@ import yaml
 import rdkit
 from rdkit import Chem
 
-from ChemTSv2.chemts_methods import Methods, setup_custom_logger
+import ChemTSv2.chemts_methods as cm
 
 cwd = Path(__file__).resolve().parent
 # target_dirname = 'work/results'
@@ -23,9 +23,7 @@ class Generate_Lead:
         self.input_compound_files = []
         self.conf = config  
         self.out_log_file = log_file
-        self.logger = setup_custom_logger('ChemTS', str(self.out_log_file))
-        cm = Methods(self.conf, logger = self.logger)
-        self.cm = cm
+        self.logger = cm.setup_custom_logger('ChemTS', str(self.out_log_file))
         self.generation_workflow = Path(self.conf['GENERATE_WORKFLOW']['working_directory'])
         self.target_dirname = Path(self.conf['ChemTS']['target_dirname'])
 
@@ -52,7 +50,7 @@ class Generate_Lead:
             input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))
 
             # 中性ならTrue,電荷ありならFalse
-            self.is_neutral = self.cm.check_neutral(input_compound_smiles)
+            self.is_neutral = cm.check_neutral(input_compound_smiles)
             
             for rank, sincho_result in sincho_results.items():
                 self.logger.info(f"rank , {rank}")
@@ -62,7 +60,7 @@ class Generate_Lead:
 
                 # 生やしたい分子量を取得
                 estimate_add_mw = sincho_result['mw']
-                weight_model_dir = self.cm.select_weight_model(input_compound_smiles, estimate_add_mw)
+                weight_model_dir = cm.select_weight_model(input_compound_smiles, estimate_add_mw)
                 self.logger.info(f"weight_model_dir , {weight_model_dir}")
                 
                 extend_atom = sincho_result['atom_num'].split('.')[1].split('_')[-1]
@@ -77,22 +75,22 @@ class Generate_Lead:
                     # TODO: `input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))`のところで中性化すれば良いと思う。(要確認)
                     self.logger.info('ligand has charges.')
                     # openbabelで中性化
-                    self.cm.do_neutral(str(input_compound_file))
+                    cm.do_neutral(str(input_compound_file), self.logger)
                     # SMILESを中性化に更新
                     input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))
 
                 # 初期SMILESの物性値を計算し、configに記載しておく
-                properties = self.cm.calc_property(input_compound_smiles)
+                properties = cm.calculate_compound_properties(input_compound_smiles)
                 local_config = copy.deepcopy(self.conf)
                 local_config['ChemTS'].update(properties)
 
                 # SMILESの並び替え(中性化→計算→並び替えの順序は保持する)
-                rearrange_smi = self.cm.set_rearrange_smiles(str(input_compound_file), extend_atom)
+                rearrange_smi = cm.set_rearrange_smiles(str(input_compound_file), extend_atom, logger = self.logger)
                 self.logger.info(f"smi , {input_compound_smiles}")
 
                 # 不正SMILESのチェック(現状は[n]のみ)
-                if not self.cm.check_error_smiles(rearrange_smi):
-                    rearrange_smi = self.cm.modify_smiles(rearrange_smi, str(input_compound_file.parent))
+                if not cm.check_error_smiles(rearrange_smi):
+                    rearrange_smi = cm.modify_smiles(rearrange_smi, str(input_compound_file.parent), logger = self.logger)
 
                 self.logger.info(f"rearrange_smi , {rearrange_smi}")
 
@@ -100,7 +98,7 @@ class Generate_Lead:
                 setting_yaml_path = cwd / 'work' / '_setting.yaml'
                 if setting_yaml_path.exists():
                     setting_yaml_path.unlink()
-                self.cm.make_config_file({**local_config, **sincho_result}, weight_model_dir)
+                cm.make_config_file({**local_config, **sincho_result}, weight_model_dir, os.path.join('ChemTSv2', 'work', '_setting.yaml'))
 
                 # 化合物生成をn回
                 df_result_list = []
@@ -147,7 +145,7 @@ class Generate_Lead:
                     result_csv_path.unlink()
                 
                 # 今回の生成のrewardなどをプロット
-                self.cm.plot_reward(str(output_csv_path))
+                cm.plot_reward(str(output_csv_path))
 
                 source_dir = cwd / self.target_dirname
                 for file_path in source_dir.glob('*'):
