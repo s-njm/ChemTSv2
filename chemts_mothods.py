@@ -28,6 +28,8 @@ def setup_custom_logger(name, log_file, log_level=logging.INFO):
         logger.addHandler(handler)
     return logger
 
+# TODO: クラス名を適切に
+# TODO: 関数が整理されていない
 class Methods:
     def __init__(self, conf=None, logger = logging.getLogger(__name__)):
         self.conf = conf
@@ -68,7 +70,7 @@ class Methods:
         subprocess.run(['obabel', '-ipdb', f_name_ext, '-omol2', '-O', f_name + '.mol2'], cwd=d_name)
         subprocess.run(['obabel', '-imol2', f_name + '.mol2','-opdb', '-O', f_name_ext, '--neutralize','-h'], cwd=d_name)
 
-    def calc_property(self, input_compound_smiles, config):
+    def calc_property(self, input_compound_smiles):
         properties = {}
         mol = Chem.MolFromSmiles(input_compound_smiles)
         properties['init_mw'] = Descriptors.ExactMolWt(mol)
@@ -76,9 +78,7 @@ class Methods:
         properties['init_acceptor'] = rdMolDescriptors.CalcNumLipinskiHBA(mol)
         properties['init_donor'] = rdMolDescriptors.CalcNumLipinskiHBD(mol)
 
-        config['ChemTS'].update(properties)
-
-        return config
+        return properties
 
     def set_rearrange_smiles(self, pdb_path, extend_atom):
         self.mol_dir = os.path.dirname(pdb_path)

@@ -4,6 +4,7 @@ import shutil
 import glob
 import subprocess
 import sys
+import copy
 from pathlib import Path
 from typing import List
 
@@ -81,7 +82,9 @@ class Generate_Lead:
                     input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))
 
                 # 初期SMILESの物性値を計算し、configに記載しておく
-                config_add_props = self.cm.calc_property(input_compound_smiles, self.conf)
+                properties = self.cm.calc_property(input_compound_smiles)
+                local_config = copy.deepcopy(self.conf)
+                local_config['ChemTS'].update(properties)
 
                 # SMILESの並び替え(中性化→計算→並び替えの順序は保持する)
                 rearrange_smi = self.cm.set_rearrange_smiles(str(input_compound_file), extend_atom)
@@ -97,11 +100,11 @@ class Generate_Lead:
                 setting_yaml_path = cwd / 'work' / '_setting.yaml'
                 if setting_yaml_path.exists():
                     setting_yaml_path.unlink()
-                self.cm.make_config_file({**config_add_props, **sincho_result}, weight_model_dir)
+                self.cm.make_config_file({**local_config, **sincho_result}, weight_model_dir)
 
                 # 化合物生成をn回
                 df_result_list = []
-                for n in range(1, int(self.conf['ChemTS']['num_chemts_loops'])+1):
+                for n in range(1, int(local_config['ChemTS']['num_chemts_loops'])+1):
                     with open(self.out_log_file, 'a') as stdout_f:
                         try:
                             subprocess.run(['python', 'run.py', '-c', str(Path('work') / '_setting.yaml'), 
