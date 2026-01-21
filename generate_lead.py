@@ -103,34 +103,8 @@ class Generate_Lead:
                 # 化合物生成をn回
                 df_result_list = []
                 for n in range(1, int(local_config['ChemTS']['num_chemts_loops'])+1):
-                    with open(self.out_log_file, 'a') as stdout_f:
-                        try:
-                            subprocess.run(['python', 'run.py', '-c', str(Path('work') / '_setting.yaml'), 
-                                            '--input_smiles', rearrange_smi], cwd=str(cwd), stdout=stdout_f, stderr=stdout_f, check=True)
-                        except subprocess.CalledProcessError as e:
-                            self.logger.error(f"ChemTS execution failed in trial {n}: {e}")
-                            raise
-                        
-                        # mv result_C* -> result.csv
-                        pattern = 'result_C*'
-                        matched_files = list((cwd / self.target_dirname).glob(pattern))
-                        
-                        if len(matched_files) == 1:
-                            shutil.move(str(matched_files[0]), str(cwd / self.target_dirname / 'result.csv'))
-                        elif len(matched_files) > 1:
-                            raise RuntimeError(f"Multiple result files found: {matched_files}. Expected only one.")
-                        else:
-                            self.logger.warning("No result file found matching 'result_C*'")
-
-                        df_result_one_cycle = pd.read_csv(str(cwd / self.target_dirname / 'result.csv'))
-                        df_result_one_cycle.insert(0, 'trial', n) 
-                        df_result_list.append(df_result_one_cycle)
-                        
-                        run_log_path = cwd / self.target_dirname / 'run.log'
-                        run_log_all_path = cwd / self.target_dirname / 'run.log.all'
-                        if run_log_path.exists():
-                            with open(run_log_path, 'r') as f_in, open(run_log_all_path, 'a') as f_out:
-                                f_out.write(f_in.read())
+                    df_result_one_cycle = self._run_chemts_process(n, rearrange_smi)
+                    df_result_list.append(df_result_one_cycle)
                 
                 df_result_all = pd.concat(df_result_list, ignore_index=True) if df_result_list else pd.DataFrame()
                         
@@ -151,3 +125,34 @@ class Generate_Lead:
                 for file_path in source_dir.glob('*'):
                     shutil.move(str(file_path), str(rank_output_dir))
         return rank_output_dirs
+
+    def _run_chemts_process(self, n, rearrange_smi):
+        with open(self.out_log_file, 'a') as stdout_f:
+            try:
+                subprocess.run(['python', 'run.py', '-c', str(Path('work') / '_setting.yaml'), 
+                                '--input_smiles', rearrange_smi], cwd=str(cwd), stdout=stdout_f, stderr=stdout_f, check=True)
+            except subprocess.CalledProcessError as e:
+                self.logger.error(f"ChemTS execution failed in trial {n}: {e}")
+                raise
+            
+            # mv result_C* -> result.csv
+            pattern = 'result_C*'
+            matched_files = list((cwd / self.target_dirname).glob(pattern))
+            
+            if len(matched_files) == 1:
+                shutil.move(str(matched_files[0]), str(cwd / self.target_dirname / 'result.csv'))
+            elif len(matched_files) > 1:
+                raise RuntimeError(f"Multiple result files found: {matched_files}. Expected only one.")
+            else:
+                self.logger.warning("No result file found matching 'result_C*'")
+
+            df_result_one_cycle = pd.read_csv(str(cwd / self.target_dirname / 'result.csv'))
+            df_result_one_cycle.insert(0, 'trial', n) 
+            
+            run_log_path = cwd / self.target_dirname / 'run.log'
+            run_log_all_path = cwd / self.target_dirname / 'run.log.all'
+            if run_log_path.exists():
+                with open(run_log_path, 'r') as f_in, open(run_log_all_path, 'a') as f_out:
+                    f_out.write(f_in.read())
+        
+        return df_result_one_cycle
