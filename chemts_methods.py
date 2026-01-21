@@ -190,43 +190,56 @@ def check_true_sincho_position(rearrange_smi_at, modi_smi, at_index):
     else:
         return False
 
-def create_config_file(base_chemts_config, sincho_result, weight_model_dir, chemts_config_path, logger = logging.getLogger(__name__)):
-    chemts_config = copy.deepcopy(base_chemts_config)
+class ChemTSConfig:
+    def __init__(self, config_dict):
+        self._config = copy.deepcopy(config_dict)
 
-    # MWごとにモデル切り替え機能
-    if chemts_config['model_setting']['use_weight_model']:
-        # chemts_config.setdefault('model_setting', {})
-        chemts_config['model_setting']['model_json'] = os.path.join(weight_model_dir, 'model.tf25.json')
-        chemts_config['model_setting']['model_weight'] = os.path.join(weight_model_dir, 'model.tf25.best.ckpt.h5')
-        chemts_config['token'] = os.path.join(weight_model_dir, 'tokens.pkl')
+    def update_molecule_properties(self, smiles):
+        """分子プロパティ（MW, LogP等）を計算し、設定を更新する"""
+        properties = calculate_compound_properties(smiles)
+        self._config.update(properties)
 
-    # 評価関数の設定
-    mw_center = sincho_result['mw']
-    logp_center = sincho_result['logp']
-    logger.info(f'mw_center: {mw_center}')
-    logger.info(f'logp_center: {logp_center}')
+    def update_trial_settings(self, sincho_result, weight_model_dir, output_dir, logger = logging.getLogger(__name__)):
+        """各試行（trial）固有の設定（出力先、Dscore中心値、モデルパス）を更新する"""
+        self._config['output_dir'] = str(output_dir)
+        chemts_config = self._config
 
-    dscore_parameters = chemts_config['Dscore_parameters']
+        # MWごとにモデル切り替え機能
+        if chemts_config['model_setting']['use_weight_model']:
+            # chemts_config.setdefault('model_setting', {})
+            chemts_config['model_setting']['model_json'] = os.path.join(weight_model_dir, 'model.tf25.json')
+            chemts_config['model_setting']['model_weight'] = os.path.join(weight_model_dir, 'model.tf25.best.ckpt.h5')
+            chemts_config['token'] = os.path.join(weight_model_dir, 'tokens.pkl')
 
-    has_SINCHO_keys = [k for k in dscore_parameters.keys() if k in SINCHO_keys]
-    for key, center_value in zip(has_SINCHO_keys, [mw_center, logp_center]):
-        if (not 'top_max' in dscore_parameters[key]):
+        # 評価関数の設定
+        mw_center = sincho_result['mw']
+        logp_center = sincho_result['logp']
+        logger.info(f'mw_center: {mw_center}')
+        logger.info(f'logp_center: {logp_center}')
+
+        dscore_parameters = chemts_config['Dscore_parameters']
+
+        has_SINCHO_keys = [k for k in dscore_parameters.keys() if k in SINCHO_keys]
+        for key, center_value in zip(has_SINCHO_keys, [mw_center, logp_center]):
+            if (not 'top_max' in dscore_parameters[key]):
+                dscore_parameters.setdefault(key, {})
+                dscore_parameters[key].setdefault('center_value', center_value)
+                for min_name, right_name in zip(['top_min', 'bottom_min'], ['top_range_left', 'bottom_range_left']):
+                    dscore_parameters[key].setdefault(min_name, {})
+                    dscore_parameters[key][min_name] = center_value - dscore_parameters[key][right_name]
+                for max_name, left_name in zip(['top_max', 'bottom_max'], ['top_range_right', 'bottom_range_right']):
+                    dscore_parameters[key].setdefault(max_name, {})
+                    dscore_parameters[key][max_name] = center_value + dscore_parameters[key][left_name]
+            
+        for key in ['acceptor', 'donor']:
             dscore_parameters.setdefault(key, {})
-            dscore_parameters[key].setdefault('center_value', center_value)
-            for min_name, right_name in zip(['top_min', 'bottom_min'], ['top_range_left', 'bottom_range_left']):
-                dscore_parameters[key].setdefault(min_name, {})
-                dscore_parameters[key][min_name] = center_value - dscore_parameters[key][right_name]
-            for max_name, left_name in zip(['top_max', 'bottom_max'], ['top_range_right', 'bottom_range_right']):
-                dscore_parameters[key].setdefault(max_name, {})
-                dscore_parameters[key][max_name] = center_value + dscore_parameters[key][left_name]
-        
-    for key in ['acceptor', 'donor']:
-        dscore_parameters.setdefault(key, {})
-        dscore_parameters[key]['max'] = sincho_result[key]['max']
-        dscore_parameters[key]['min'] = sincho_result[key]['min']
+            dscore_parameters[key]['max'] = sincho_result[key]['max']
+            dscore_parameters[key]['min'] = sincho_result[key]['min']
 
-    with open(chemts_config_path, 'w') as f:
-        yaml.dump(chemts_config, f, default_flow_style=False, sort_keys=False)
+    def save(self, file_path):
+        """設定をYAMLファイルとして書き出す"""
+        with open(file_path, 'w') as f:
+            yaml.dump(self._config, f, default_flow_style=False, sort_keys=False)
 
 def choise_mol(df, outpath, cutoff=0.3, nsamples=10):
     clusters = mol_clustering_butina(df['mols'], cutoff=cutoff)

@@ -77,9 +77,8 @@ class Generate_Lead:
                 self.logger.info(f"weight_model_dir , {weight_model_dir}")
                 
                 # 初期SMILESの物性値を計算し、configに記載しておく
-                properties = cm.calculate_compound_properties(input_compound_smiles)
-                local_config = copy.deepcopy(self.base_chemts_config)
-                local_config.update(properties)
+                ts_config = cm.ChemTSConfig(self.base_chemts_config)
+                ts_config.update_molecule_properties(input_compound_smiles)
 
                 # SMILESの並び替え(中性化→計算→並び替えの順序は保持する)
                 extend_atom = sincho_result['atom_num'].split('.')[1].split('_')[-1]
@@ -99,8 +98,9 @@ class Generate_Lead:
                     working_dir.mkdir(parents=True, exist_ok=True)
                     setting_file_name = '_setting.yaml'
                     
-                    local_config['output_dir'] = str(working_dir)
-                    cm.create_config_file(local_config, sincho_result, weight_model_dir, str(working_dir / setting_file_name), logger = self.logger)
+                    # 試行ごとの設定更新と保存
+                    ts_config.update_trial_settings(sincho_result, weight_model_dir, working_dir, logger=self.logger)
+                    ts_config.save(working_dir / setting_file_name)
 
                     self._run_chemts_process(n, rearrange_smi, working_dir, setting_file_name)
                     working_dirs.append(working_dir)
