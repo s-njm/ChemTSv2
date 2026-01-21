@@ -94,7 +94,8 @@ class Generate_Lead:
                 self.logger.info(f"rearrange_smi , {rearrange_smi}")
 
                 (cwd / 'work').mkdir(parents=True, exist_ok=True)
-                cm.make_config_file({**local_config, **sincho_result}, weight_model_dir, os.path.join('ChemTSv2', 'work', '_setting.yaml'), logger = self.logger)
+                setting_file_path = os.path.join('ChemTSv2', 'work', '_setting.yaml')
+                cm.make_config_file(local_config, sincho_result, weight_model_dir, setting_file_path, logger = self.logger)
 
                 # 化合物生成をn回
                 df_result_list = []
@@ -119,14 +120,14 @@ class Generate_Lead:
                     shutil.move(str(file_path), str(rank_output_dir))
         return rank_output_dirs
 
-    def _run_chemts_process(self, n, rearrange_smi, cwd) -> pd.DataFrame:
+    def _run_chemts_process(self, trial_n, rearrange_smi, cwd) -> pd.DataFrame:
         setting_file = cwd / 'work' / '_setting.yaml'
         with open(self.out_log_file, 'a') as stdout_f:
             try:
                 cmd = [ 'python', 'run.py', '-c', str(setting_file), '--input_smiles', rearrange_smi ]
                 subprocess.run(cmd, cwd=str(cwd), stdout=stdout_f, stderr=stdout_f, check=True)
             except subprocess.CalledProcessError as e:
-                self.logger.error(f"ChemTS execution failed in trial {n}: {e}")
+                self.logger.error(f"ChemTS execution failed in trial {trial_n}: {e}")
                 raise
             
         result_dir = cwd / self.output_dir
@@ -142,7 +143,7 @@ class Generate_Lead:
             self.logger.warning("No result file found matching 'result_C*'")
 
         df_result_one_cycle = pd.read_csv(str(result_dir / 'result.csv'))
-        df_result_one_cycle.insert(0, 'trial', n) 
+        df_result_one_cycle.insert(0, 'trial', trial_n) 
         
         run_log_path = result_dir / 'run.log'
         run_log_all_path = result_dir / 'run.log.all'

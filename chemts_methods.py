@@ -190,8 +190,8 @@ def check_true_sincho_position(rearrange_smi_at, modi_smi, at_index):
     else:
         return False
 
-def make_config_file(configs, weight_model_dir, chemts_config_path, logger = logging.getLogger(__name__)):
-    chemts_config = copy.deepcopy(configs['ChemTS'])
+def make_config_file(base_config, sincho_result, weight_model_dir, chemts_config_path, logger = logging.getLogger(__name__)):
+    chemts_config = copy.deepcopy(base_config['ChemTS'])
 
     # MWごとにモデル切り替え機能
     if chemts_config['model_setting']['use_weight_model']:
@@ -201,8 +201,8 @@ def make_config_file(configs, weight_model_dir, chemts_config_path, logger = log
         chemts_config['token'] = os.path.join(weight_model_dir, 'tokens.pkl')
 
     # 評価関数の設定
-    mw_center = configs['mw']
-    logp_center = configs['logp']
+    mw_center = sincho_result['mw']
+    logp_center = sincho_result['logp']
     logger.info(f'mw_center: {mw_center}')
     logger.info(f'logp_center: {logp_center}')
 
@@ -222,8 +222,8 @@ def make_config_file(configs, weight_model_dir, chemts_config_path, logger = log
         
     for key in ['acceptor', 'donor']:
         dscore_parameters.setdefault(key, {})
-        dscore_parameters[key]['max'] = configs[key]['max']
-        dscore_parameters[key]['min'] = configs[key]['min']
+        dscore_parameters[key]['max'] = sincho_result[key]['max']
+        dscore_parameters[key]['min'] = sincho_result[key]['min']
 
     with open(chemts_config_path, 'w') as f:
         yaml.dump(chemts_config, f, default_flow_style=False, sort_keys=False)
