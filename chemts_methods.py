@@ -190,8 +190,8 @@ def check_true_sincho_position(rearrange_smi_at, modi_smi, at_index):
     else:
         return False
 
-def make_config_file(base_config, sincho_result, weight_model_dir, chemts_config_path, logger = logging.getLogger(__name__)):
-    chemts_config = copy.deepcopy(base_config['ChemTS'])
+def create_config_file(base_chemts_config, sincho_result, weight_model_dir, chemts_config_path, logger = logging.getLogger(__name__)):
+    chemts_config = copy.deepcopy(base_chemts_config)
 
     # MWごとにモデル切り替え機能
     if chemts_config['model_setting']['use_weight_model']:
