@@ -1,4 +1,4 @@
-import os, subprocess, yaml
+import os, subprocess, yaml, copy
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -190,8 +190,8 @@ def check_true_sincho_position(rearrange_smi_at, modi_smi, at_index):
     else:
         return False
 
-def make_config_file(configs, weight_model_dir, chemts_config_path):
-    chemts_config = configs['ChemTS']
+def make_config_file(configs, weight_model_dir, chemts_config_path, logger = logging.getLogger(__name__)):
+    chemts_config = copy.deepcopy(configs['ChemTS'])
 
     # MWごとにモデル切り替え機能
     if chemts_config['model_setting']['use_weight_model']:
@@ -203,8 +203,8 @@ def make_config_file(configs, weight_model_dir, chemts_config_path):
     # 評価関数の設定
     mw_center = configs['mw']
     logp_center = configs['logp']
-    print('mw_center', mw_center)
-    print('logp_center', logp_center)
+    logger.info(f'mw_center: {mw_center}')
+    logger.info(f'logp_center: {logp_center}')
 
     dscore_parameters = chemts_config['Dscore_parameters']
 

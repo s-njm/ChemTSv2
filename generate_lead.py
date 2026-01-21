@@ -16,7 +16,6 @@ from rdkit import Chem
 import ChemTSv2.chemts_methods as cm
 
 cwd = Path(__file__).resolve().parent
-# target_dirname = 'work/results'
 
 class Generate_Lead:
     def __init__(self, config, log_file):
@@ -25,7 +24,7 @@ class Generate_Lead:
         self.out_log_file = log_file
         self.logger = cm.setup_custom_logger('ChemTS', str(self.out_log_file))
         self.generation_workflow = Path(self.conf['GENERATE_WORKFLOW']['working_directory'])
-        self.target_dirname = Path(self.conf['ChemTS']['target_dirname'])
+        self.output_dir = Path(self.conf['ChemTS']['output_dir'])
 
     def run(self, trajectory_dirs: List[Path]) -> List[Path]:
         rank_output_dirs = []
@@ -52,6 +51,20 @@ class Generate_Lead:
             # 中性ならTrue,電荷ありならFalse
             self.is_neutral = cm.check_neutral(input_compound_smiles)
             
+            if not self.is_neutral:
+                # 電荷ありをopenbabelで中性化する
+                # SINCHOは電荷ありでやってる
+                # 中性化→プロパティ計算→SMILES並び替え
+                # lig_000.pdb -> lig_000_org.pdbとして保持し、中性化したものをlig_000.pdbとする
+                # pdbだと上手くいかないからmol2経由する lig_000.pdb -> lig_000.mol2 -> (neutral) -> lig_000.pdb(同名だが中性化されている)
+                
+                # TODO: `input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))`のところで中性化すれば良いと思う。(要確認)
+                self.logger.info('ligand has charges.')
+                # openbabelで中性化
+                cm.do_neutral(str(input_compound_file), self.logger)
+                # SMILESを中性化に更新
+                input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))
+
             for rank, sincho_result in sincho_results.items():
                 self.logger.info(f"rank , {rank}")
                 rank_output_dir = trajectory_output_dir / rank
@@ -64,20 +77,6 @@ class Generate_Lead:
                 self.logger.info(f"weight_model_dir , {weight_model_dir}")
                 
                 extend_atom = sincho_result['atom_num'].split('.')[1].split('_')[-1]
-
-                if not self.is_neutral:
-                    # 電荷ありをopenbabelで中性化する
-                    # SINCHOは電荷ありでやってる
-                    # 中性化→プロパティ計算→SMILES並び替え
-                    # lig_000.pdb -> lig_000_org.pdbとして保持し、中性化したものをlig_000.pdbとする
-                    # pdbだと上手くいかないからmol2経由する lig_000.pdb -> lig_000.mol2 -> (neutral) -> lig_000.pdb(同名だが中性化されている)
-                    
-                    # TODO: `input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))`のところで中性化すれば良いと思う。(要確認)
-                    self.logger.info('ligand has charges.')
-                    # openbabelで中性化
-                    cm.do_neutral(str(input_compound_file), self.logger)
-                    # SMILESを中性化に更新
-                    input_compound_smiles = Chem.MolToSmiles(Chem.MolFromPDBFile(str(input_compound_file)))
 
                 # 初期SMILESの物性値を計算し、configに記載しておく
                 properties = cm.calculate_compound_properties(input_compound_smiles)
@@ -95,10 +94,7 @@ class Generate_Lead:
                 self.logger.info(f"rearrange_smi , {rearrange_smi}")
 
                 (cwd / 'work').mkdir(parents=True, exist_ok=True)
-                setting_yaml_path = cwd / 'work' / '_setting.yaml'
-                if setting_yaml_path.exists():
-                    setting_yaml_path.unlink()
-                cm.make_config_file({**local_config, **sincho_result}, weight_model_dir, os.path.join('ChemTSv2', 'work', '_setting.yaml'))
+                cm.make_config_file({**local_config, **sincho_result}, weight_model_dir, os.path.join('ChemTSv2', 'work', '_setting.yaml'), logger = self.logger)
 
                 # 化合物生成をn回
                 df_result_list = []
@@ -107,21 +103,18 @@ class Generate_Lead:
                     df_result_list.append(df_result_one_cycle)
                 
                 df_result_all = pd.concat(df_result_list, ignore_index=True) if df_result_list else pd.DataFrame()
-                        
-                # for debug df_result_all
-                # df_result_all = pd.read_csv(os.path.join(cwd, self.target_dirname, 'results.csv'))
                 
                 # n回分を一つのファイルにし、個々のファイルは消しておく
-                output_csv_path = cwd / self.target_dirname / 'results.csv'
+                output_csv_path = cwd / self.output_dir / 'results.csv'
                 df_result_all.to_csv(str(output_csv_path))
-                result_csv_path = cwd / self.target_dirname / 'result.csv'
+                result_csv_path = cwd / self.output_dir / 'result.csv'
                 if result_csv_path.exists():
                     result_csv_path.unlink()
                 
                 # 今回の生成のrewardなどをプロット
                 cm.plot_reward(str(output_csv_path))
 
-                source_dir = cwd / self.target_dirname
+                source_dir = cwd / self.output_dir
                 for file_path in source_dir.glob('*'):
                     shutil.move(str(file_path), str(rank_output_dir))
         return rank_output_dirs
@@ -136,7 +129,7 @@ class Generate_Lead:
                 self.logger.error(f"ChemTS execution failed in trial {n}: {e}")
                 raise
             
-        result_dir = cwd / self.target_dirname
+        result_dir = cwd / self.output_dir
         # mv result_C* -> result.csv
         pattern = 'result_C*'
         matched_files = list(result_dir.glob(pattern))
