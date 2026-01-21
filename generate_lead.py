@@ -24,7 +24,6 @@ class Generate_Lead:
         self.out_log_file = log_file
         self.logger = cm.setup_custom_logger('ChemTS', str(self.out_log_file))
         self.generation_workflow = Path(config['GENERATE_WORKFLOW']['working_directory'])
-        self.output_dir = Path(config['ChemTS']['output_dir'])
         self.num_chemts_loops = int(config['ChemTS']['num_chemts_loops'])
 
     def run(self, trajectory_dirs: List[Path]) -> List[Path]:
@@ -104,6 +103,13 @@ class Generate_Lead:
                     cm.create_config_file(local_config, sincho_result, weight_model_dir, str(working_dir / setting_file_name), logger = self.logger)
 
                     df_result_one_cycle = self._run_chemts_process(n, rearrange_smi, working_dir, setting_file_name)
+                    
+                    run_log_path = working_dir / 'run.log'
+                    run_log_all_path = rank_output_dir / 'run.log.all'
+                    if run_log_path.exists():
+                        with open(run_log_path, 'r') as f_in, open(run_log_all_path, 'a') as f_out:
+                            f_out.write(f_in.read())
+                    
                     df_result_list.append(df_result_one_cycle)
                 
                 df_result_all = pd.concat(df_result_list, ignore_index=True) if df_result_list else pd.DataFrame()
@@ -137,10 +143,4 @@ class Generate_Lead:
 
         df_result_one_cycle.insert(0, 'trial', trial_n) 
         
-        run_log_path = working_dir / 'run.log'
-        run_log_all_path = working_dir / 'run.log.all'
-        if run_log_path.exists():
-            with open(run_log_path, 'r') as f_in, open(run_log_all_path, 'a') as f_out:
-                f_out.write(f_in.read())
-    
         return df_result_one_cycle
