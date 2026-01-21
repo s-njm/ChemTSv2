@@ -93,7 +93,7 @@ class Generate_Lead:
                 self.logger.info(f"rearrange_smi , {rearrange_smi}")
 
                 # 化合物生成をn回
-                df_result_list = []
+                working_dirs = []
                 for n in range(1, self.num_chemts_loops+1):
                     working_dir = rank_output_dir / 'working' / f'trial_{n}'
                     working_dir.mkdir(parents=True, exist_ok=True)
@@ -102,16 +102,30 @@ class Generate_Lead:
                     local_config['output_dir'] = str(working_dir)
                     cm.create_config_file(local_config, sincho_result, weight_model_dir, str(working_dir / setting_file_name), logger = self.logger)
 
-                    df_result_one_cycle = self._run_chemts_process(n, rearrange_smi, working_dir, setting_file_name)
-                    
-                    run_log_path = working_dir / 'run.log'
-                    run_log_all_path = rank_output_dir / 'run.log.all'
-                    if run_log_path.exists():
-                        with open(run_log_path, 'r') as f_in, open(run_log_all_path, 'a') as f_out:
-                            f_out.write(f_in.read())
-                    
-                    df_result_list.append(df_result_one_cycle)
+                    self._run_chemts_process(n, rearrange_smi, working_dir, setting_file_name)
+                    working_dirs.append(working_dir)
                 
+                # ログの集約
+                with open(rank_output_dir / 'run.log.all', 'w') as f_out:
+                    for working_dir in working_dirs:
+                        run_log_path = working_dir / 'run.log'
+                        if run_log_path.exists():
+                            with open(run_log_path, 'r') as f_in:
+                                f_out.write(f_in.read())
+
+                # 1. 結果CSVの集約
+                df_result_list = []
+                for n, working_dir in enumerate(working_dirs, start=1):
+                    matched_files = list(working_dir.glob('result_C*'))
+                    if len(matched_files) == 1:
+                        df = pd.read_csv(str(matched_files[0]))
+                        df.insert(0, 'trial', n)
+                        df_result_list.append(df)
+                    elif len(matched_files) > 1:
+                        raise RuntimeError(f"Multiple result files found in {working_dir}: {matched_files}. Expected only one.")
+                    else:
+                        raise RuntimeError(f"No result file found matching 'result_C*' in {working_dir}")
+
                 df_result_all = pd.concat(df_result_list, ignore_index=True) if df_result_list else pd.DataFrame()
                 
                 # n回分を一つのファイルに集約する
@@ -123,7 +137,7 @@ class Generate_Lead:
 
         return rank_output_dirs
 
-    def _run_chemts_process(self, trial_n, rearrange_smi, working_dir: Path, setting_file_name: str) -> pd.DataFrame:
+    def _run_chemts_process(self, trial_n, rearrange_smi, working_dir: Path, setting_file_name: str) -> None:
         with open(self.out_log_file, 'a') as stdout_f:
             try:
                 cmd = [ 'python', 'run.py', '-c', str(working_dir / setting_file_name), '--input_smiles', rearrange_smi ]
@@ -131,16 +145,3 @@ class Generate_Lead:
             except subprocess.CalledProcessError as e:
                 self.logger.error(f"ChemTS execution failed in trial {trial_n}: {e}")
                 raise
-            
-        matched_files = list(working_dir.glob('result_C*'))
-        
-        if len(matched_files) == 1:
-            df_result_one_cycle = pd.read_csv(str(matched_files[0]))
-        elif len(matched_files) > 1:
-            raise RuntimeError(f"Multiple result files found: {matched_files}. Expected only one.")
-        else:
-            raise RuntimeError(f"No result file found matching 'result_C*'")
-
-        df_result_one_cycle.insert(0, 'trial', trial_n) 
-        
-        return df_result_one_cycle
