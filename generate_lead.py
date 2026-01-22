@@ -18,12 +18,12 @@ import ChemTSv2.chemts_methods as cm
 CHEMTS_CURRENT_DIR = Path(__file__).resolve().parent
 
 class Generate_Lead:
-    def __init__(self, config, log_file):
+    def __init__(self, config, output_dir, log_file):
         self.input_compound_files = []
         self.base_chemts_config = copy.deepcopy(config['ChemTS'])
         self.out_log_file = log_file
         self.logger = cm.setup_custom_logger('ChemTS', str(self.out_log_file))
-        self.generation_workflow = Path(config['GENERATE_WORKFLOW']['working_directory'])
+        self.generation_workflow = Path(output_dir)
         self.num_chemts_loops = int(config['ChemTS']['num_chemts_loops'])
 
     def run(self, trajectory_dirs: List[Path]) -> List[Path]:
